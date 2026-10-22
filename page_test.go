@@ -62,8 +62,8 @@ func TestEveryMethodPathAndQueryGetsThePage(t *testing.T) {
 			if got := response.Header.Get("Retry-After"); got != "3600" {
 				t.Errorf("%s %s: Retry-After = %q, want %q", method, path, got, "3600")
 			}
-			if got := response.Header.Get("Cache-Control"); got != "no-store" {
-				t.Errorf("%s %s: Cache-Control = %q, want %q", method, path, got, "no-store")
+			if got := response.Header.Get("Cache-Control"); got != "no-store, no-transform" {
+				t.Errorf("%s %s: Cache-Control = %q, want %q", method, path, got, "no-store, no-transform")
 			}
 			if got := response.Header.Get("Content-Type"); got != "text/html; charset=utf-8" {
 				t.Errorf("%s %s: Content-Type = %q, want %q", method, path, got, "text/html; charset=utf-8")
