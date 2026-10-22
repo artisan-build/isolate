@@ -41,7 +41,7 @@ func handler(cfg config, template string) http.Handler {
 
 		header := w.Header()
 		header.Set("Content-Type", "text/html; charset=utf-8")
-		header.Set("Cache-Control", "no-store")
+		header.Set("Cache-Control", "no-store, no-transform")
 		header.Set("Retry-After", "3600")
 		header.Set("X-Robots-Tag", "noindex")
 
