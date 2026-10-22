@@ -32,7 +32,7 @@ async fn isolate(State(config): State<Arc<Config>>, parts: Parts) -> Response {
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::CACHE_CONTROL, "no-store, no-transform")
         .header(header::RETRY_AFTER, "3600")
         .header("x-robots-tag", "noindex")
         .body(Body::from(body))
