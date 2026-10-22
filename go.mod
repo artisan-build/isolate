@@ -1,3 +1,3 @@
 module github.com/artisan-build/isolate
 
-go 1.23
+go 1.25
