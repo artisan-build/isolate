@@ -53,7 +53,7 @@ async fn every_method_path_and_query_gets_the_page() {
 
             for (name, value) in [
                 ("content-type", "text/html; charset=utf-8"),
-                ("cache-control", "no-store"),
+                ("cache-control", "no-store, no-transform"),
                 ("retry-after", "3600"),
                 ("x-robots-tag", "noindex"),
             ] {
