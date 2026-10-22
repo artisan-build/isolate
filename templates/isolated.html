@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Temporarily unavailable</title>
+<title>{{SITE_NAME}}</title>
 <style>
-:root { color-scheme: light dark; }
+:root { color-scheme: light; }
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -15,8 +15,8 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: #f6f6f5;
-  color: #1c1b19;
+  background: {{BACKGROUND_COLOR}};
+  color: {{TEXT_COLOR}};
   font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 main {
@@ -32,22 +32,26 @@ h1 {
   font-size: 1.375rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+  color: {{PRIMARY_COLOR}};
 }
+.logo { display: block; max-width: 100%; max-height: 72px; margin: 0 0 20px; }
 p { margin: 0; }
 p + p { margin-top: 12px; }
 .muted { color: #6b665f; font-size: 0.875rem; }
-@media (prefers-color-scheme: dark) {
-  body { background: #17161a; color: #ecebe8; }
-  main { background: #201f24; border-color: #343239; }
-  .muted { color: #a19c95; }
-}
 </style>
 </head>
 <body>
-<main>
-<h1>Temporarily unavailable</h1>
-<p>{{MESSAGE}}</p>
+<main data-testid="isolate-page">
+<header data-testid="isolate-brand">
+{{LOGO}}
+<h1>{{SITE_NAME}}</h1>
+</header>
+<section data-testid="isolate-message">
+{{MESSAGE}}
+</section>
+<footer data-testid="isolate-footer">
 <p class="muted">Please try again later.</p>
+</footer>
 </main>
 </body>
 </html>
