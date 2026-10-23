@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -99,8 +99,8 @@ impl CachedObjectStore {
             entries.get(key).cloned()
         };
         if let Some(entry) = cached {
-            let age = now.saturating_sub(entry.fetched_at);
-            if entry.fetched && age < self.ttl {
+            let age = now.checked_sub(entry.fetched_at);
+            if entry.fetched && age.is_some_and(|age| age < self.ttl) {
                 return if entry.missing {
                     Err(StoreError::Missing)
                 } else {
@@ -153,13 +153,10 @@ pub struct ContentResolver {
 
 impl ContentResolver {
     pub fn production(source: Arc<dyn ObjectStore>) -> Self {
+        let started = Instant::now();
         Self::new(
             source,
-            Arc::new(|| {
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-            }),
+            Arc::new(move || started.elapsed()),
             BUCKET_CACHE_TTL,
         )
     }

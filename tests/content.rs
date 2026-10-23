@@ -178,6 +178,27 @@ async fn positive_and_negative_cache_refresh_at_exactly_ten_seconds() {
 }
 
 #[tokio::test]
+async fn moving_the_clock_backward_expires_a_cached_entry() {
+    let store = FakeStore::default();
+    store.object("sites/example.com/message.txt", "before clock correction");
+    let now = Arc::new(AtomicU64::new(10_000));
+    let resolver = test_resolver(&store, &now);
+
+    assert_eq!(
+        resolver.resolve("example.com").await.message,
+        "before clock correction"
+    );
+    store.object("sites/example.com/message.txt", "after clock correction");
+    now.store(9_000, Ordering::SeqCst);
+
+    assert_eq!(
+        resolver.resolve("example.com").await.message,
+        "after clock correction"
+    );
+    assert_eq!(store.calls("sites/example.com/message.txt"), 2);
+}
+
+#[tokio::test]
 async fn validated_last_good_survives_malformed_missing_and_outage_states() {
     let store = FakeStore::default();
     let message_key = "sites/example.com/message.txt";
