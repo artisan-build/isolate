@@ -1,4 +1,6 @@
-//! The Rust half of the Isolated Mode stand-in. One static page, every request.
+//! The Rust half of the Isolated Mode stand-in.
 
+pub mod content;
 pub mod page;
 pub mod server;
+pub mod store;

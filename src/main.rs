@@ -2,15 +2,13 @@ use std::net::SocketAddr;
 
 use tokio::signal::unix::{signal, SignalKind};
 
-use isolate::page::Config;
+use isolate::content::ContentResolver;
 use isolate::server::router;
+use isolate::store::object_store_from_env;
 
 #[tokio::main]
 async fn main() {
-    let config = Config::load(
-        &std::env::var("ISOLATE_MESSAGES").unwrap_or_default(),
-        &std::env::var("ISOLATE_DEFAULT_MESSAGE").unwrap_or_default(),
-    );
+    let resolver = ContentResolver::production(object_store_from_env(|name| std::env::var(name)));
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -26,7 +24,7 @@ async fn main() {
 
     println!("isolate: listening on {addr}");
 
-    axum::serve(listener, router(config))
+    axum::serve(listener, router(resolver))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap_or_else(|error| panic!("isolate: serve: {error}"));

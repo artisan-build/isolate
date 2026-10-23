@@ -2,18 +2,29 @@
 name = "isolate"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 publish = false
 # Cloud reads default-run when the environment is created and never looks again.
 default-run = "isolate"
 
 [dependencies]
 axum = "0.8.9"
+aws-credential-types = "=1.2.8"
+aws-sigv4 = "=1.3.6"
+# aws-sigv4's AWS/Smithy requirements are open-ended within their major
+# versions. Keep its complete production family on the Rust 1.88-compatible
+# release set rather than allowing a lock refresh to select a higher MSRV.
+aws-smithy-async = "=1.2.6"
+aws-smithy-http = "=0.62.5"
+aws-smithy-runtime-api = "=1.9.2"
+aws-smithy-types = "=1.3.4"
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-webpki-roots"] }
 serde_json = "1.0.154"
-tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
 
 [dev-dependencies]
-# Test-only. sha2 pins the shared page, tower drives the router without a socket,
-# and tokio's io-util reads a raw response off one.
+# Test-only. sha2 pins the handoff artifacts, tower drives the router without a
+# socket, and tokio's io-util reads a raw response off one.
 sha2 = "0.11.1"
 tokio = { version = "1.54.1", features = ["io-util"] }
 tower = { version = "0.5.3", features = ["util"] }
