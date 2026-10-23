@@ -153,6 +153,19 @@ func TestBrandingKeepsValidSiblingsWhenKnownFieldsHaveWrongTypes(t *testing.T) {
 	}
 }
 
+func TestBrandingNullSiteNameFallsBackToDefault(t *testing.T) {
+	store := newFakeObjectStore()
+	store.objects["sites/example.com/branding.json"] = []byte(`{"site_name":null}`)
+	store.objects["default/branding.json"] = []byte(`{"site_name":"Default site name"}`)
+
+	content := newContentResolver(store, time.Now, 10*time.Second).
+		Resolve(context.Background(), "example.com")
+
+	if content.SiteName != "Default site name" {
+		t.Errorf("site name = %q, want default after null site value", content.SiteName)
+	}
+}
+
 func TestResolveFallsThroughMissingAndMalformedFiles(t *testing.T) {
 	cases := map[string][]byte{
 		"invalid UTF-8 message": {0xff, 0xfe},

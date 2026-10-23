@@ -252,12 +252,12 @@ func decodedString(value json.RawMessage) *string {
 		return nil
 	}
 
-	var decoded string
+	var decoded *string
 	if err := json.Unmarshal(value, &decoded); err != nil {
 		return nil
 	}
 
-	return &decoded
+	return decoded
 }
 
 func (r *contentResolver) logo(
