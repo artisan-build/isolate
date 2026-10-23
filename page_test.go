@@ -147,7 +147,8 @@ func TestMalformedBrandingKeeps503AndBuiltInBranding(t *testing.T) {
 func TestHandlerCancelsBlockedBucketAndServesBuiltIns(t *testing.T) {
 	store := newFakeObjectStore()
 	store.block = true
-	h := handler(newContentResolver(store, time.Now, 10*time.Second), pageTemplate, 15*time.Millisecond)
+	injectedTimeout := 25 * time.Millisecond
+	h := handler(newContentResolver(store, time.Now, 10*time.Second), pageTemplate, injectedTimeout)
 	request := httptest.NewRequest(http.MethodGet, "http://blocked.example/", nil)
 	recorder := httptest.NewRecorder()
 
@@ -155,7 +156,7 @@ func TestHandlerCancelsBlockedBucketAndServesBuiltIns(t *testing.T) {
 	h.ServeHTTP(recorder, request)
 	elapsed := time.Since(started)
 
-	if elapsed >= 250*time.Millisecond {
+	if elapsed >= 3*injectedTimeout {
 		t.Errorf("blocked request took %s, want injected deadline to cancel promptly", elapsed)
 	}
 	if recorder.Code != http.StatusServiceUnavailable {
@@ -163,6 +164,12 @@ func TestHandlerCancelsBlockedBucketAndServesBuiltIns(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), builtinDefaultMessage) {
 		t.Error("response does not contain the built-in message")
+	}
+}
+
+func TestProductionBucketRequestTimeoutIsExactlyTwoSeconds(t *testing.T) {
+	if bucketRequestTimeout != 2*time.Second {
+		t.Errorf("bucketRequestTimeout = %s, want exactly 2s", bucketRequestTimeout)
 	}
 }
 

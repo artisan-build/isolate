@@ -118,6 +118,41 @@ func TestResolveUsesSiteDefaultAndBuiltInPerField(t *testing.T) {
 	}
 }
 
+func TestBrandingKeepsValidSiblingsWhenKnownFieldsHaveWrongTypes(t *testing.T) {
+	store := newFakeObjectStore()
+	store.objects["sites/example.com/branding.json"] = []byte(`{
+		"site_name":"Mixed validity site",
+		"primary_color":42,
+		"background_color":"#abcdef",
+		"text_color":false,
+		"logo":["logo.png"]
+	}`)
+	store.objects["default/branding.json"] = []byte(`{
+		"site_name":"Default site",
+		"primary_color":"#123456",
+		"text_color":"#654321"
+	}`)
+
+	content := newContentResolver(store, time.Now, 10*time.Second).
+		Resolve(context.Background(), "example.com")
+
+	if content.SiteName != "Mixed validity site" {
+		t.Errorf("site name = %q, want valid site sibling", content.SiteName)
+	}
+	if content.PrimaryColor != "#123456" {
+		t.Errorf("primary color = %q, want default after wrong-typed site value", content.PrimaryColor)
+	}
+	if content.BackgroundColor != "#abcdef" {
+		t.Errorf("background color = %q, want valid site sibling", content.BackgroundColor)
+	}
+	if content.TextColor != "#654321" {
+		t.Errorf("text color = %q, want default after wrong-typed site value", content.TextColor)
+	}
+	if content.Logo != nil {
+		t.Errorf("logo = %#v, want wrong-typed logo ignored", content.Logo)
+	}
+}
+
 func TestResolveFallsThroughMissingAndMalformedFiles(t *testing.T) {
 	cases := map[string][]byte{
 		"invalid UTF-8 message": {0xff, 0xfe},
@@ -214,6 +249,57 @@ func TestObjectCacheUsesLastGoodValueOnlyForOutages(t *testing.T) {
 	freshCache := newCachedObjectStore(store, func() time.Time { return now }, 10*time.Second)
 	if _, err := freshCache.Get(context.Background(), "message"); err == nil {
 		t.Error("outage before a good read returned nil error")
+	}
+}
+
+func TestResolverKeepsLastValidMessageAcrossMalformedReadAndOutage(t *testing.T) {
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	store := newFakeObjectStore()
+	key := "sites/example.com/message.txt"
+	store.objects[key] = []byte("Last valid site message")
+	resolver := newContentResolver(store, func() time.Time { return now }, 10*time.Second)
+
+	if got := resolver.Resolve(context.Background(), "example.com").Message; got != "Last valid site message" {
+		t.Fatalf("initial message = %q, want valid site message", got)
+	}
+
+	now = now.Add(10 * time.Second)
+	store.objects[key] = []byte(strings.Repeat("x", maximumMessageCharacters+1))
+	if got := resolver.Resolve(context.Background(), "example.com").Message; got != builtinDefaultMessage {
+		t.Fatalf("message after malformed read = %q, want built-in fallback", got)
+	}
+
+	now = now.Add(10 * time.Second)
+	store.errors[key] = errors.New("bucket unavailable")
+	if got := resolver.Resolve(context.Background(), "example.com").Message; got != "Last valid site message" {
+		t.Errorf("message during outage = %q, want last validated value", got)
+	}
+}
+
+func TestResolverKeepsLastValidBrandingAcrossMalformedReadAndOutage(t *testing.T) {
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	store := newFakeObjectStore()
+	key := "sites/example.com/branding.json"
+	store.objects[key] = []byte(`{"site_name":"Last valid site","primary_color":"#123456"}`)
+	resolver := newContentResolver(store, func() time.Time { return now }, 10*time.Second)
+
+	content := resolver.Resolve(context.Background(), "example.com")
+	if content.SiteName != "Last valid site" || content.PrimaryColor != "#123456" {
+		t.Fatalf("initial branding = %#v, want valid site branding", content)
+	}
+
+	now = now.Add(10 * time.Second)
+	store.objects[key] = []byte(`{"site_name":`)
+	content = resolver.Resolve(context.Background(), "example.com")
+	if content.SiteName != builtinSiteName || content.PrimaryColor != builtinPrimaryColor {
+		t.Fatalf("branding after malformed read = %#v, want built-in fallback", content)
+	}
+
+	now = now.Add(10 * time.Second)
+	store.errors[key] = errors.New("bucket unavailable")
+	content = resolver.Resolve(context.Background(), "example.com")
+	if content.SiteName != "Last valid site" || content.PrimaryColor != "#123456" {
+		t.Errorf("branding during outage = %#v, want last validated values", content)
 	}
 }
 

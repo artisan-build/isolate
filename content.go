@@ -60,6 +60,10 @@ func newCachedObjectStore(source objectStore, now func() time.Time, ttl time.Dur
 }
 
 func (s *cachedObjectStore) Get(ctx context.Context, key string) ([]byte, error) {
+	return s.get(ctx, key, nil)
+}
+
+func (s *cachedObjectStore) get(ctx context.Context, key string, valid func([]byte) bool) ([]byte, error) {
 	now := s.now()
 
 	s.mu.Lock()
@@ -83,12 +87,14 @@ func (s *cachedObjectStore) Get(ctx context.Context, key string) ([]byte, error)
 	switch {
 	case err == nil:
 		copied := append([]byte(nil), value...)
-		s.entries[key] = cacheEntry{
-			fetchedAt:   now,
-			value:       copied,
-			lastGood:    append([]byte(nil), copied...),
-			hasLastGood: true,
+		current.fetchedAt = now
+		current.value = copied
+		current.missing = false
+		if valid == nil || valid(copied) {
+			current.lastGood = append([]byte(nil), copied...)
+			current.hasLastGood = true
 		}
+		s.entries[key] = current
 
 		return append([]byte(nil), copied...), nil
 	case errors.Is(err, errObjectNotFound):
@@ -173,17 +179,12 @@ func (r *contentResolver) message(ctx context.Context, sitePrefix string) string
 }
 
 func (r *contentResolver) validMessage(ctx context.Context, key string) (string, bool) {
-	value, err := r.objects.Get(ctx, key)
-	if err != nil || !utf8.Valid(value) {
+	value, err := r.objects.get(ctx, key, validMessageBytes)
+	if err != nil || !validMessageBytes(value) {
 		return "", false
 	}
 
-	message := string(value)
-	if utf8.RuneCountInString(message) > maximumMessageCharacters {
-		return "", false
-	}
-
-	return message, true
+	return string(value), true
 }
 
 func (r *contentResolver) branding(ctx context.Context, prefix string) brandingFile {
@@ -191,17 +192,72 @@ func (r *contentResolver) branding(ctx context.Context, prefix string) brandingF
 		return brandingFile{}
 	}
 
-	value, err := r.objects.Get(ctx, prefix+"branding.json")
-	if err != nil || !utf8.Valid(value) {
+	value, err := r.objects.get(ctx, prefix+"branding.json", validBrandingBytes)
+	if err != nil {
 		return brandingFile{}
 	}
 
-	var branding brandingFile
-	if err := json.Unmarshal(value, &branding); err != nil {
+	branding, ok := decodeBranding(value)
+	if !ok {
 		return brandingFile{}
 	}
 
 	return branding
+}
+
+func validMessageBytes(value []byte) bool {
+	return utf8.Valid(value) && utf8.RuneCount(value) <= maximumMessageCharacters
+}
+
+func validBrandingBytes(value []byte) bool {
+	_, ok := decodeBranding(value)
+	return ok
+}
+
+func decodeBranding(value []byte) (brandingFile, bool) {
+	if !utf8.Valid(value) {
+		return brandingFile{}, false
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(value, &fields); err != nil || fields == nil {
+		return brandingFile{}, false
+	}
+
+	branding := brandingFile{
+		SiteName:        decodedString(fields["site_name"]),
+		PrimaryColor:    decodedString(fields["primary_color"]),
+		BackgroundColor: decodedString(fields["background_color"]),
+		TextColor:       decodedString(fields["text_color"]),
+		Logo:            decodedString(fields["logo"]),
+	}
+	if branding.PrimaryColor != nil && !colorPattern.MatchString(*branding.PrimaryColor) {
+		branding.PrimaryColor = nil
+	}
+	if branding.BackgroundColor != nil && !colorPattern.MatchString(*branding.BackgroundColor) {
+		branding.BackgroundColor = nil
+	}
+	if branding.TextColor != nil && !colorPattern.MatchString(*branding.TextColor) {
+		branding.TextColor = nil
+	}
+	if branding.Logo != nil && !logoPattern.MatchString(*branding.Logo) {
+		branding.Logo = nil
+	}
+
+	return branding, true
+}
+
+func decodedString(value json.RawMessage) *string {
+	if value == nil {
+		return nil
+	}
+
+	var decoded string
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return nil
+	}
+
+	return &decoded
 }
 
 func (r *contentResolver) logo(

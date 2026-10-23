@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 )
@@ -83,12 +85,23 @@ func TestS3ObjectStoreReadsBytesAndClassifiesMissingKeys(t *testing.T) {
 }
 
 func TestNewObjectStoreUsesInjectedEndpointCredentialsAndPathStyle(t *testing.T) {
+	const (
+		accessKey = "test-access-key"
+		secretKey = "test-secret-key"
+		region    = "test-region-1"
+	)
+
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/isolate-content/default/message.txt" {
 			t.Errorf("request path = %q, want path-style bucket and key", request.URL.Path)
 		}
-		if !strings.HasPrefix(request.Header.Get("Authorization"), "AWS4-HMAC-SHA256 ") {
-			t.Error("request is not signed with the injected credentials")
+		authorization := request.Header.Get("Authorization")
+		date := request.Header.Get("X-Amz-Date")
+		if len(date) < 8 || !strings.Contains(authorization, "Credential="+accessKey+"/"+date[:8]+"/"+region+"/s3/aws4_request") {
+			t.Errorf("authorization credential scope does not contain the injected access key and region: %q", authorization)
+		}
+		if expected := expectedAuthorization(t, request, accessKey, secretKey, region); authorization != expected {
+			t.Errorf("authorization signature does not match the injected secret\ngot:  %s\nwant: %s", authorization, expected)
 		}
 		_, _ = response.Write([]byte("endpoint test object"))
 	}))
@@ -97,9 +110,9 @@ func TestNewObjectStoreUsesInjectedEndpointCredentialsAndPathStyle(t *testing.T)
 	values := map[string]string{
 		"AWS_BUCKET":                  "isolate-content",
 		"AWS_ENDPOINT_URL":            server.URL,
-		"AWS_REGION":                  "test-region-1",
-		"AWS_ACCESS_KEY_ID":           "test-access-key",
-		"AWS_SECRET_ACCESS_KEY":       "test-secret-key",
+		"AWS_REGION":                  region,
+		"AWS_ACCESS_KEY_ID":           accessKey,
+		"AWS_SECRET_ACCESS_KEY":       secretKey,
 		"AWS_USE_PATH_STYLE_ENDPOINT": "true",
 	}
 	store := newObjectStore(func(key string) string { return values[key] })
@@ -113,4 +126,33 @@ func TestNewObjectStoreUsesInjectedEndpointCredentialsAndPathStyle(t *testing.T)
 	if string(value) != "endpoint test object" {
 		t.Errorf("Get body = %q, want endpoint response", value)
 	}
+}
+
+func expectedAuthorization(t *testing.T, request *http.Request, accessKey, secretKey, region string) string {
+	t.Helper()
+
+	signingTime, err := time.Parse("20060102T150405Z", request.Header.Get("X-Amz-Date"))
+	if err != nil {
+		t.Fatalf("parse X-Amz-Date: %v", err)
+	}
+
+	unsigned := request.Clone(context.Background())
+	unsigned.Header = request.Header.Clone()
+	unsigned.Header.Del("Authorization")
+	signer := v4.NewSigner(func(options *v4.SignerOptions) {
+		options.DisableURIPathEscaping = true
+	})
+	if err := signer.SignHTTP(
+		context.Background(),
+		aws.Credentials{AccessKeyID: accessKey, SecretAccessKey: secretKey},
+		unsigned,
+		request.Header.Get("X-Amz-Content-Sha256"),
+		"s3",
+		region,
+		signingTime,
+	); err != nil {
+		t.Fatalf("sign captured request: %v", err)
+	}
+
+	return unsigned.Header.Get("Authorization")
 }
