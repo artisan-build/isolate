@@ -13,9 +13,9 @@ const TEMPLATE = `<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Temporarily unavailable</title>
+<title>{{SITE_NAME}}</title>
 <style>
-:root { color-scheme: light dark; }
+:root { color-scheme: light; }
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -24,8 +24,8 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: #f6f6f5;
-  color: #1c1b19;
+  background: {{BACKGROUND_COLOR}};
+  color: {{TEXT_COLOR}};
   font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 main {
@@ -41,28 +41,32 @@ h1 {
   font-size: 1.375rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+  color: {{PRIMARY_COLOR}};
 }
+.logo { display: block; max-width: 100%; max-height: 72px; margin: 0 0 20px; }
 p { margin: 0; }
 p + p { margin-top: 12px; }
 .muted { color: #6b665f; font-size: 0.875rem; }
-@media (prefers-color-scheme: dark) {
-  body { background: #17161a; color: #ecebe8; }
-  main { background: #201f24; border-color: #343239; }
-  .muted { color: #a19c95; }
-}
 </style>
 </head>
 <body>
-<main>
-<h1>Temporarily unavailable</h1>
-<p>{{MESSAGE}}</p>
+<main data-testid="isolate-page">
+<header data-testid="isolate-brand">
+{{LOGO}}
+<h1>{{SITE_NAME}}</h1>
+</header>
+<section data-testid="isolate-message">
+{{MESSAGE}}
+</section>
+<footer data-testid="isolate-footer">
 <p class="muted">Please try again later.</p>
+</footer>
 </main>
 </body>
 </html>
 `;
 
-const MESSAGE = 'yakfeather.com is isolated (Worker).';
+const MESSAGE = 'This site is temporarily unavailable. It will be back shortly.';
 
 /** Escapes the five characters that matter in element text, exactly as page.go
  * and src/page.rs do, so the three runtimes emit the same bytes. */
@@ -94,9 +98,37 @@ export function escapeHtml(value) {
   return out;
 }
 
-/** Renders the shared template with the message substituted in. */
+function renderParagraphs(message) {
+  const paragraphs = [];
+  let lines = [];
+
+  const flush = () => {
+    if (lines.length === 0) return;
+    paragraphs.push(`<p>${escapeHtml(lines.join('\n'))}</p>`);
+    lines = [];
+  };
+
+  for (const line of message.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
+    if (line.trim() === '') {
+      flush();
+    } else {
+      lines.push(line);
+    }
+  }
+  flush();
+
+  return paragraphs.join('\n');
+}
+
+/** Renders the shared template with the built-in branding. */
 export function renderPage(message) {
-  return TEMPLATE.replaceAll('{{MESSAGE}}', escapeHtml(message));
+  return TEMPLATE
+    .replaceAll('{{SITE_NAME}}', 'Temporarily unavailable')
+    .replaceAll('{{PRIMARY_COLOR}}', '#1c1b19')
+    .replaceAll('{{BACKGROUND_COLOR}}', '#f6f6f5')
+    .replaceAll('{{TEXT_COLOR}}', '#1c1b19')
+    .replaceAll('{{LOGO}}', '')
+    .replaceAll('{{MESSAGE}}', renderParagraphs(message));
 }
 
 export default {
