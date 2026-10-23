@@ -75,7 +75,8 @@ func handler(resolver *contentResolver, template string, bucketTimeout time.Dura
 
 func isLogoRequest(r *http.Request) bool {
 	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
-		r.URL.Path == "/__isolate/logo" && r.URL.RawQuery == ""
+		r.URL.EscapedPath() == "/__isolate/logo" &&
+		!r.URL.ForceQuery && r.URL.RawQuery == ""
 }
 
 // serve runs an HTTP server on addr until SIGTERM or SIGINT, then drains the

@@ -60,7 +60,9 @@ func TestHandlerKeepsPageShapeForMethodsPathsAndQueries(t *testing.T) {
 		{http.MethodDelete, "/.env"},
 		{"PROPFIND", "/deep/path"},
 		{http.MethodPost, "/__isolate/logo"},
+		{http.MethodGet, "/__isolate/logo?"},
 		{http.MethodGet, "/__isolate/logo?download=1"},
+		{http.MethodGet, "/__isolate%2Flogo"},
 		{http.MethodGet, "/__isolate/logo/"},
 	}
 
@@ -79,6 +81,9 @@ func TestHandlerKeepsPageShapeForMethodsPathsAndQueries(t *testing.T) {
 		if !strings.Contains(recorder.Body.String(), "Method and route test message") {
 			t.Errorf("%s %s: response does not contain test-created content", testCase.method, testCase.target)
 		}
+		if strings.Contains(recorder.Body.String(), "png-test-bytes") {
+			t.Errorf("%s %s: response contains logo bytes", testCase.method, testCase.target)
+		}
 	}
 }
 
@@ -88,18 +93,26 @@ func TestExactLogoPathServesBytesAndMediaType(t *testing.T) {
 	store.objects["sites/example.com/logo.jpg"] = []byte("jpeg-test-bytes")
 	h := handler(newContentResolver(store, time.Now, 10*time.Second), pageTemplate, 50*time.Millisecond)
 
-	request := httptest.NewRequest(http.MethodGet, "http://example.com/__isolate/logo", nil)
-	recorder := httptest.NewRecorder()
-	h.ServeHTTP(recorder, request)
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			request := httptest.NewRequest(method, "http://example.com/__isolate/logo", nil)
+			recorder := httptest.NewRecorder()
+			h.ServeHTTP(recorder, request)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", recorder.Code)
-	}
-	if got := recorder.Header().Get("Content-Type"); got != "image/jpeg" {
-		t.Errorf("Content-Type = %q, want image/jpeg", got)
-	}
-	if got := recorder.Body.String(); got != "jpeg-test-bytes" {
-		t.Errorf("body = %q, want test logo bytes", got)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", recorder.Code)
+			}
+			if got := recorder.Header().Get("Content-Type"); got != "image/jpeg" {
+				t.Errorf("Content-Type = %q, want image/jpeg", got)
+			}
+			wantBody := "jpeg-test-bytes"
+			if method == http.MethodHead {
+				wantBody = ""
+			}
+			if got := recorder.Body.String(); got != wantBody {
+				t.Errorf("body = %q, want %q", got, wantBody)
+			}
+		})
 	}
 }
 
