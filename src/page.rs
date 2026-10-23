@@ -1,94 +1,17 @@
-//! The isolation page and the configuration that fills in its one message.
+//! Rendering for the shared isolation page.
 
-use std::collections::HashMap;
+use crate::content::PageContent;
 
-/// The last fallback: used when neither `ISOLATE_MESSAGES` nor
-/// `ISOLATE_DEFAULT_MESSAGE` supplies a message.
-pub const BUILTIN_DEFAULT_MESSAGE: &str =
-    "This site is temporarily unavailable. It will be back shortly.";
-
-/// The only substitution the shared template carries.
-pub const MESSAGE_PLACEHOLDER: &str = "{{MESSAGE}}";
-
-/// The shared isolation page, byte-identical to the copy on the `main` branch.
-/// `TEMPLATE_SHA256` in `tests/page.rs` pins it.
 pub const PAGE_TEMPLATE: &str = include_str!("../templates/isolated.html");
 
-/// Boot-time configuration: a message per host plus a fallback.
-#[derive(Debug, Clone)]
-pub struct Config {
-    messages: HashMap<String, String>,
-    fallback: String,
-}
+const MESSAGE_PLACEHOLDER: &str = "{{MESSAGE}}";
+const SITE_NAME_PLACEHOLDER: &str = "{{SITE_NAME}}";
+const PRIMARY_COLOR_PLACEHOLDER: &str = "{{PRIMARY_COLOR}}";
+const BACKGROUND_COLOR_PLACEHOLDER: &str = "{{BACKGROUND_COLOR}}";
+const TEXT_COLOR_PLACEHOLDER: &str = "{{TEXT_COLOR}}";
+const LOGO_PLACEHOLDER: &str = "{{LOGO}}";
+const LOGO_MARKUP: &str = r#"<img class="logo" src="/__isolate/logo" alt="">"#;
 
-impl Config {
-    /// Resolves the configuration from raw environment values. A malformed
-    /// `messages_json` is logged and ignored, never fatal.
-    pub fn load(messages_json: &str, default_message: &str) -> Self {
-        let fallback = match default_message.trim() {
-            "" => BUILTIN_DEFAULT_MESSAGE.to_owned(),
-            trimmed => trimmed.to_owned(),
-        };
-
-        let mut messages = HashMap::new();
-        let raw = messages_json.trim();
-
-        if !raw.is_empty() {
-            match serde_json::from_str::<HashMap<String, String>>(raw) {
-                Ok(parsed) => {
-                    for (host, message) in parsed {
-                        messages.insert(normalize_host(&host), message);
-                    }
-                }
-                Err(error) => {
-                    eprintln!("isolate: ignoring malformed ISOLATE_MESSAGES: {error}");
-                }
-            }
-        }
-
-        Self { messages, fallback }
-    }
-
-    /// Picks the message for a `Host` header value.
-    pub fn message_for(&self, host: &str) -> &str {
-        self.messages
-            .get(&normalize_host(host))
-            .map_or(self.fallback.as_str(), String::as_str)
-    }
-
-    /// How many per-host messages were accepted. Lets a test tell "parsed and
-    /// empty" apart from "rejected as malformed".
-    pub fn host_count(&self) -> usize {
-        self.messages.len()
-    }
-}
-
-/// Lowercases a host, drops any port and any trailing root dot, so that
-/// `Example.COM:8080` and `example.com.` share one key.
-fn normalize_host(host: &str) -> String {
-    let host = host.trim().to_lowercase();
-
-    let without_port = if let Some(rest) = host.strip_prefix('[') {
-        match rest.find(']') {
-            Some(end) => &rest[..end],
-            None => rest,
-        }
-    } else {
-        match host.rfind(':') {
-            Some(colon) => &host[..colon],
-            None => host.as_str(),
-        }
-    };
-
-    without_port
-        .strip_suffix('.')
-        .unwrap_or(without_port)
-        .to_owned()
-}
-
-/// Escapes the five characters that matter in element text. Hand-rolled, rather
-/// than taken from a crate, so that the Go and Rust runtimes emit byte-identical
-/// bodies.
 pub fn escape_html(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
 
@@ -106,7 +29,70 @@ pub fn escape_html(value: &str) -> String {
     escaped
 }
 
-/// Substitutes the escaped message into the shared template.
-pub fn render_page(template: &str, message: &str) -> String {
-    template.replace(MESSAGE_PLACEHOLDER, &escape_html(message))
+pub fn render_paragraphs(message: &str) -> String {
+    let normalized = message.replace("\r\n", "\n").replace('\r', "\n");
+    let mut paragraphs = Vec::new();
+    let mut lines = Vec::new();
+
+    for line in normalized.split('\n') {
+        if line.trim().is_empty() {
+            if !lines.is_empty() {
+                paragraphs.push(format!("<p>{}</p>", escape_html(&lines.join("\n"))));
+                lines.clear();
+            }
+        } else {
+            lines.push(line);
+        }
+    }
+    if !lines.is_empty() {
+        paragraphs.push(format!("<p>{}</p>", escape_html(&lines.join("\n"))));
+    }
+
+    paragraphs.join("\n")
+}
+
+/// Replaces placeholders while scanning only the template. Placeholder-looking
+/// text supplied by the bucket is therefore never expanded a second time.
+pub fn render_page(template: &str, content: &PageContent) -> String {
+    let site_name = escape_html(&content.site_name);
+    let message = render_paragraphs(&content.message);
+    let logo = if content.logo.is_some() {
+        LOGO_MARKUP
+    } else {
+        ""
+    };
+    let replacements = [
+        (SITE_NAME_PLACEHOLDER, site_name.as_str()),
+        (PRIMARY_COLOR_PLACEHOLDER, content.primary_color.as_str()),
+        (
+            BACKGROUND_COLOR_PLACEHOLDER,
+            content.background_color.as_str(),
+        ),
+        (TEXT_COLOR_PLACEHOLDER, content.text_color.as_str()),
+        (LOGO_PLACEHOLDER, logo),
+        (MESSAGE_PLACEHOLDER, message.as_str()),
+    ];
+
+    let mut rendered = String::with_capacity(template.len() + message.len() + site_name.len());
+    let mut remaining = template;
+    while !remaining.is_empty() {
+        let next = replacements
+            .iter()
+            .filter_map(|(placeholder, value)| {
+                remaining
+                    .find(placeholder)
+                    .map(|offset| (offset, *placeholder, *value))
+            })
+            .min_by_key(|(offset, _, _)| *offset);
+
+        let Some((offset, placeholder, value)) = next else {
+            rendered.push_str(remaining);
+            break;
+        };
+        rendered.push_str(&remaining[..offset]);
+        rendered.push_str(value);
+        remaining = &remaining[offset + placeholder.len()..];
+    }
+
+    rendered
 }
